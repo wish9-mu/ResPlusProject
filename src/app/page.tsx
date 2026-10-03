@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Ambulance, ChevronDown, MapPin, PhoneCall } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { StatusStepper } from "@/components/status-stepper";
 import { TopBar } from "@/components/top-bar";
@@ -161,9 +162,9 @@ function ChooseScreen({
 
       {/* What happens next */}
       <ul className="mt-8 grid grid-cols-3 gap-2 text-center">
-        <Step icon={<PhoneRingIcon />} label="Health worker calls you" />
-        <Step icon={<AmbulanceIcon />} label="Ambulance gets ready" />
-        <Step icon={<PinIcon />} label="Your location is shared" />
+        <Step icon={<PhoneCall aria-hidden className="h-5 w-5" />} label="Health worker calls you" />
+        <Step icon={<Ambulance aria-hidden className="h-5 w-5" />} label="Ambulance gets ready" />
+        <Step icon={<MapPin aria-hidden className="h-5 w-5" />} label="Your location is shared" />
       </ul>
 
       {/* Unregistered path */}
@@ -183,7 +184,13 @@ function ChooseScreen({
               Not registered? No profile needed.
             </span>
           </span>
-          <ChevronIcon open={showUnregistered} />
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "h-5 w-5 shrink-0 text-slate-400 transition-transform",
+              showUnregistered && "rotate-180",
+            )}
+          />
         </button>
 
         {showUnregistered && (
@@ -297,7 +304,7 @@ function LiveScreen({
           href={BHW_PHONE}
           className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-emergency bg-white text-base font-bold text-emergency transition active:bg-red-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-red-200"
         >
-          <PhoneRingIcon />
+          <PhoneCall aria-hidden className="h-5 w-5" />
           Weak signal? Call by phone
         </a>
       </section>
@@ -330,7 +337,7 @@ function LiveScreen({
           <>
             <p className="flex items-start gap-2 text-sm text-slate-600">
               <span className="mt-0.5 text-emergency">
-                <PinIcon />
+                <MapPin aria-hidden className="h-5 w-5" />
               </span>
               Location sent. The health worker will confirm identity and
               details on the call.
@@ -378,64 +385,4 @@ function useElapsed(since: number | null) {
   const mm = String(Math.floor(secs / 60)).padStart(2, "0");
   const ss = String(secs % 60).padStart(2, "0");
   return `${mm}:${ss}`;
-}
-
-/* ------------------------------------------------------------------ */
-/* Icons (inline, decorative)                                          */
-/* ------------------------------------------------------------------ */
-
-const iconProps = {
-  "aria-hidden": true,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 2,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-  className: "h-5 w-5",
-};
-
-function PhoneRingIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
-      <path d="M15 3a6 6 0 0 1 6 6" />
-      <path d="M15 7a2 2 0 0 1 2 2" />
-    </svg>
-  );
-}
-
-function AmbulanceIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M3 17V7a1 1 0 0 1 1-1h10v11" />
-      <path d="M14 10h4l3 3v4h-7" />
-      <circle cx="7" cy="17.5" r="1.5" />
-      <circle cx="17" cy="17.5" r="1.5" />
-      <path d="M8 9v4M6 11h4" />
-    </svg>
-  );
-}
-
-function PinIcon() {
-  return (
-    <svg {...iconProps}>
-      <path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z" />
-      <circle cx="12" cy="10" r="2.5" />
-    </svg>
-  );
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      {...iconProps}
-      className={cn(
-        "h-5 w-5 shrink-0 text-slate-400 transition-transform",
-        open && "rotate-180",
-      )}
-    >
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
 }
