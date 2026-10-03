@@ -13,7 +13,9 @@ export const viewport: Viewport = {
   themeColor: "#dc2626",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // Pinch-zoom stays enabled for low-vision users. Inputs use 16px text so
+  // iOS does not auto-zoom on focus. viewportFit enables safe-area insets.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -23,7 +25,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen pb-16">
+      <body className="min-h-screen pb-[calc(5rem+env(safe-area-inset-bottom))]">
         {children}
         {/* Safety rule #5: "Call 911" is always visible. */}
         <Call911Bar />

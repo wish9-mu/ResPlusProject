@@ -1,6 +1,5 @@
 -- Res+ demo seed. NO real patient data (TECH_STACK.md security rule).
--- Run after the migrations. Hospitals/ambulance are reference data; the demo
--- incident mirrors the Lola Rosa stroke scenario in FLOW.md.
+-- Safe to re-run: every insert skips rows that already exist.
 
 insert into hospitals (name, location, level, capabilities, beds_available, is_diverting)
 values
@@ -10,20 +9,30 @@ values
     array['CT','ICU','cath_lab','trauma'], 1, false),
   ('Barangay Health Station', st_point(121.050, 14.680)::geography, 'Level 1',
     array[]::text[], 0, true)
-on conflict do nothing;
+on conflict (name) do nothing;
 
 insert into ambulances (unit_name, lgu, location, status)
 values ('QC-Rescue-01', 'Quezon City', st_point(121.045, 14.678)::geography, 'available')
-on conflict do nothing;
+on conflict (unit_name) do nothing;
 
 -- Demo patient uses a synthetic name only.
 insert into patients (name, age, sex, conditions, meds, allergies, address, landmark)
-values (
+select
   'Rosa D. (demo)', 68, 'F',
   array['Hypertension','Type 2 diabetes'],
   array['Amlodipine','Metformin'],
   array['None recorded'],
   '14 Mabini St, Barangay San Roque, Quezon City',
   'Blue gate beside the sari-sari store'
-)
-on conflict do nothing;
+where not exists (select 1 from patients where name = 'Rosa D. (demo)');
+
+-- Demo crew. Replace or add your real crew emails here; anyone not listed
+-- signs in as a household and is turned away from the crew dashboards.
+insert into crew_allowlist (email, role, name, hospital_name) values
+  ('bhw@resplus.demo',       'bhw',       'Demo BHW',            null),
+  ('ambulance@resplus.demo', 'ambulance', 'Demo Ambulance Crew', null),
+  ('er@resplus.demo',        'er',        'Demo ER Staff',       'QC General Hospital')
+on conflict (email) do update
+  set role = excluded.role, name = excluded.name, hospital_name = excluded.hospital_name;
+
+select public.sync_crew_roles();

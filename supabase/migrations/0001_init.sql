@@ -1,13 +1,13 @@
 -- Res+ initial schema. Mirrors TECH_STACK.md data model and FLOW.md statuses.
--- Run in the Supabase SQL editor, or via the Supabase CLI.
+-- Run via supabase/setup.sql in the Supabase SQL editor.
 
--- Extensions
-create extension if not exists postgis;
-create extension if not exists pg_cron;
+-- Extensions. PostGIS goes in the `extensions` schema (Supabase convention).
+-- pg_cron is added later with the escalation-timer work.
+create extension if not exists postgis with schema extensions;
 
--- Enums
+-- Enums (app_role avoids clashing with the SQL keyword ROLE)
 do $$ begin
-  create type role as enum ('household', 'bhw', 'ambulance', 'er');
+  create type app_role as enum ('household', 'bhw', 'ambulance', 'er');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
@@ -23,15 +23,27 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
--- profiles: one row per user (linked to auth.users)
+-- hospitals (created first so profiles can reference it)
+create table if not exists hospitals (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  location geography(point, 4326),
+  level text,
+  capabilities text[] not null default '{}',
+  beds_available int not null default 0,
+  is_diverting boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+-- profiles: one row per auth user. Created by the on_auth_user_created trigger.
 create table if not exists profiles (
   id uuid primary key references auth.users (id) on delete cascade,
-  role role not null,
+  role app_role not null default 'household',
   name text not null,
   phone text,
   on_duty boolean not null default false,
   location geography(point, 4326),
-  hospital_id uuid, -- set for ER staff; FK added after hospitals exists
+  hospital_id uuid references hospitals (id) on delete set null, -- ER staff
   created_at timestamptz not null default now()
 );
 
@@ -52,27 +64,10 @@ create table if not exists patients (
   created_at timestamptz not null default now()
 );
 
--- hospitals
-create table if not exists hospitals (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  location geography(point, 4326),
-  level text,
-  capabilities text[] not null default '{}',
-  beds_available int not null default 0,
-  is_diverting boolean not null default false,
-  updated_at timestamptz not null default now()
-);
-
-alter table profiles
-  drop constraint if exists profiles_hospital_id_fkey,
-  add constraint profiles_hospital_id_fkey
-    foreign key (hospital_id) references hospitals (id) on delete set null;
-
 -- ambulances
 create table if not exists ambulances (
   id uuid primary key default gen_random_uuid(),
-  unit_name text not null,
+  unit_name text not null unique,
   lgu text,
   crew_ids uuid[] not null default '{}',
   location geography(point, 4326),
@@ -107,7 +102,7 @@ create table if not exists transcript_segments (
 create table if not exists location_pings (
   id uuid primary key default gen_random_uuid(),
   incident_id uuid not null references incidents (id) on delete cascade,
-  who role not null,
+  who app_role not null,
   location geography(point, 4326) not null,
   recorded_at timestamptz not null default now()
 );
@@ -132,7 +127,7 @@ create table if not exists incident_events (
   created_at timestamptz not null default now()
 );
 
--- Helpful indexes
+-- Indexes
 create index if not exists idx_incidents_status on incidents (status);
 create index if not exists idx_incident_events_incident on incident_events (incident_id, created_at);
 create index if not exists idx_hospitals_location on hospitals using gist (location);

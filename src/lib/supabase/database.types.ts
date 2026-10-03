@@ -60,6 +60,16 @@ interface IncidentEventRow {
   created_at: string;
 }
 
+interface ProfileRow {
+  id: string;
+  role: RoleDb;
+  name: string;
+  phone: string | null;
+  on_duty: boolean;
+  hospital_id: string | null;
+  created_at: string;
+}
+
 export interface Database {
   // supabase-js 2.x reads this marker for typed-client inference. Without it,
   // write payloads (.insert/.update) collapse to `never`.
@@ -92,6 +102,12 @@ export interface Database {
         Update: Partial<IncidentEventRow>;
         Relationships: [];
       };
+      profiles: {
+        Row: ProfileRow;
+        Insert: Partial<ProfileRow>;
+        Update: Partial<ProfileRow>;
+        Relationships: [];
+      };
     };
     // Empty object (not Record<string, never>): an empty map trivially
     // satisfies postgrest-js's Record<string, GenericView/GenericFunction>
@@ -99,7 +115,7 @@ export interface Database {
     Views: {};
     Functions: {};
     Enums: {
-      role: RoleDb;
+      app_role: RoleDb;
       incident_status: IncidentStatusDb;
     };
     CompositeTypes: {};
