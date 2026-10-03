@@ -1,6 +1,7 @@
 // Server-side Supabase client for Server Components, Route Handlers, and
 // Server Actions. Reads/writes cookies so auth sessions persist.
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createRawClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { Database } from "./database.types";
 
@@ -29,14 +30,16 @@ export async function createClient() {
   );
 }
 
-// Privileged client for server-only tasks that must bypass RLS (seeding,
-// escalation jobs, admin writes). NEVER import this into client code.
+// Privileged client for server-only tasks that must bypass RLS (writes made
+// after an explicit authorization check). NEVER import this into client code.
 export function createAdminClient() {
-  const { createClient: createRawClient } =
-    require("@supabase/supabase-js") as typeof import("@supabase/supabase-js");
+  const secret = process.env.SUPABASE_SECRET_KEY;
+  if (!secret) {
+    throw new Error("SUPABASE_SECRET_KEY is not set");
+  }
   return createRawClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SECRET_KEY!,
-    { auth: { persistSession: false } },
+    secret,
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 }

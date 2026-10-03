@@ -24,8 +24,22 @@ interface IncidentRow {
   missing_fields: string[];
   unstable: boolean;
   escalation_deadline: string | null;
+  // Who raised the SOS (anonymous household session or enrolled household).
+  reporter_id: string | null;
+  // Free-text note from the quick SOS path.
+  note: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface TranscriptSegmentRow {
+  id: string;
+  incident_id: string;
+  speaker: string | null;
+  text: string;
+  // Idempotency key "<uid>:<sentenceId>:<offset>" so retries never duplicate.
+  source_key: string | null;
+  created_at: string;
 }
 
 interface PatientRow {
@@ -106,6 +120,12 @@ export interface Database {
         Row: ProfileRow;
         Insert: Partial<ProfileRow>;
         Update: Partial<ProfileRow>;
+        Relationships: [];
+      };
+      transcript_segments: {
+        Row: TranscriptSegmentRow;
+        Insert: Partial<TranscriptSegmentRow>;
+        Update: Partial<TranscriptSegmentRow>;
         Relationships: [];
       };
     };

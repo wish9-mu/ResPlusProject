@@ -26,13 +26,14 @@ select
   'Blue gate beside the sari-sari store'
 where not exists (select 1 from patients where name = 'Rosa D. (demo)');
 
--- Demo crew. Replace or add your real crew emails here; anyone not listed
--- signs in as a household and is turned away from the crew dashboards.
-insert into crew_allowlist (email, role, name, hospital_name) values
-  ('bhw@resplus.demo',       'bhw',       'Demo BHW',            null),
-  ('ambulance@resplus.demo', 'ambulance', 'Demo Ambulance Crew', null),
-  ('er@resplus.demo',        'er',        'Demo ER Staff',       'QC General Hospital')
-on conflict (email) do update
-  set role = excluded.role, name = excluded.name, hospital_name = excluded.hospital_name;
-
-select public.sync_crew_roles();
+-- Crew accounts are NOT seeded here: this repo is public, so real crew emails
+-- live only in the database. To add crew, run in the SQL editor (role: postgres):
+--
+--   insert into crew_allowlist (email, role, name, hospital_name) values
+--     ('someone@example.com', 'bhw', 'Name', null)
+--   on conflict (email) do update
+--     set role = excluded.role, name = excluded.name, hospital_name = excluded.hospital_name;
+--   select public.sync_crew_roles();
+--
+-- role: 'bhw' | 'ambulance' | 'er'. hospital_name is for ER staff only and
+-- must match hospitals.name exactly.

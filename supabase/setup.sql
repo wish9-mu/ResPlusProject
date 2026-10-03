@@ -1,5 +1,5 @@
-﻿-- Res+ one-shot setup. Paste this whole file into Supabase > SQL Editor > New query, then Run.
--- Generated from migrations/0001-0003 + seed.sql. Safe to re-run.
+﻿-- Res+ one-shot setup. Paste this whole file into Supabase > SQL Editor > New query, then Run (role: postgres).
+-- Generated from migrations/0001-0004 + seed.sql. Safe to re-run.
 
 -- ===== migrations\0001_init.sql =====
 -- Res+ initial schema. Mirrors TECH_STACK.md data model and FLOW.md statuses.
@@ -317,6 +317,50 @@ $$;
 revoke execute on function public.sync_crew_roles() from public, anon, authenticated;
 
 
+-- ===== migrations\0004_calls.sql =====
+-- Res+ live call + transcription support.
+-- Safe to re-run. Run as the `postgres` role in the SQL editor.
+
+-- Who raised the SOS. Households sign in anonymously when they tap SOS, so
+-- even unregistered callers have an identity the call token can be tied to.
+alter table incidents
+  add column if not exists reporter_id uuid references profiles (id) on delete set null;
+-- Free-text note from the quick (unregistered) SOS path.
+alter table incidents
+  add column if not exists note text check (char_length(note) <= 500);
+
+create index if not exists idx_incidents_reporter on incidents (reporter_id);
+
+-- The reporter can see their own incident (e.g. status updates).
+drop policy if exists incidents_reporter_read on incidents;
+create policy incidents_reporter_read on incidents
+  for select using (reporter_id = auth.uid());
+
+-- Idempotency key for transcript segments: "<uid>:<sentenceId>:<offset>".
+-- Lets a retried save never create a duplicate line.
+alter table transcript_segments
+  add column if not exists source_key text;
+create unique index if not exists uq_transcript_segments_source_key
+  on transcript_segments (source_key);
+create index if not exists idx_transcript_segments_incident
+  on transcript_segments (incident_id, created_at);
+
+-- Supabase Realtime: push inserts/updates to the dashboards. Realtime still
+-- applies each table's RLS, so users only receive rows they can select.
+do $$
+declare t text;
+begin
+  foreach t in array array['incidents', 'incident_events', 'transcript_segments'] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+
 -- ===== seed.sql =====
 -- Res+ demo seed. NO real patient data (TECH_STACK.md security rule).
 -- Safe to re-run: every insert skips rows that already exist.
@@ -346,14 +390,15 @@ select
   'Blue gate beside the sari-sari store'
 where not exists (select 1 from patients where name = 'Rosa D. (demo)');
 
--- Demo crew. Replace or add your real crew emails here; anyone not listed
--- signs in as a household and is turned away from the crew dashboards.
-insert into crew_allowlist (email, role, name, hospital_name) values
-  ('bhw@resplus.demo',       'bhw',       'Demo BHW',            null),
-  ('ambulance@resplus.demo', 'ambulance', 'Demo Ambulance Crew', null),
-  ('er@resplus.demo',        'er',        'Demo ER Staff',       'QC General Hospital')
-on conflict (email) do update
-  set role = excluded.role, name = excluded.name, hospital_name = excluded.hospital_name;
-
-select public.sync_crew_roles();
+-- Crew accounts are NOT seeded here: this repo is public, so real crew emails
+-- live only in the database. To add crew, run in the SQL editor (role: postgres):
+--
+--   insert into crew_allowlist (email, role, name, hospital_name) values
+--     ('someone@example.com', 'bhw', 'Name', null)
+--   on conflict (email) do update
+--     set role = excluded.role, name = excluded.name, hospital_name = excluded.hospital_name;
+--   select public.sync_crew_roles();
+--
+-- role: 'bhw' | 'ambulance' | 'er'. hospital_name is for ER staff only and
+-- must match hospitals.name exactly.
 

@@ -3,47 +3,126 @@
 import { useEffect, useState } from "react";
 import { Ambulance, ChevronDown, MapPin, PhoneCall } from "lucide-react";
 import { Badge } from "@/components/ui";
+import { CallButton } from "@/components/call/CallButton";
 import { StatusStepper } from "@/components/status-stepper";
 import { TopBar } from "@/components/top-bar";
-import { mockIncident } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
 import { STATUS_LABEL, type IncidentStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 // The landing page IS the household experience (FLOW.md: never a dead end).
-// Two entry paths:
-//   - registered: enrolled patient, SOS carries full identity.
-//   - unregistered: fast SOS for a bystander or un-enrolled person; sends
-//     location + minimal info so help is never blocked on a profile.
+// Every SOS is unregistered for now: no profile, optional note, and a GPS fix
+// if the phone allows it. The health worker confirms identity on the call.
+// (Enrolled profiles come back once BHW enrollment writes real patients.)
 //
 // Layout is mobile-first: one dominant SOS target in the thumb zone, large
 // (>= 48px) tap targets, and short copy that can be read under stress.
 type Mode = "choosing" | "live";
 
+// Placeholder BHW/LGU hotline for the tel: fallback until crew phones are set.
 const BHW_PHONE = "tel:+6321234567";
+
+// The SOS never waits longer than this for a GPS fix.
+const GPS_WAIT_MS = 3000;
+
+// Best-effort GPS fix. Resolves null (never rejects) if permission is denied,
+// it takes too long, or the point is outside the Philippines (the API only
+// accepts PH points). FLOW.md "Bad GPS": the BHW confirms location on the call.
+function quickLocation(): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return resolve(null);
+    const timer = window.setTimeout(() => resolve(null), GPS_WAIT_MS);
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        window.clearTimeout(timer);
+        const inPh =
+          coords.latitude >= 4 && coords.latitude <= 22 &&
+          coords.longitude >= 116 && coords.longitude <= 127;
+        resolve(inPh ? { lat: coords.latitude, lng: coords.longitude } : null);
+      },
+      () => {
+        window.clearTimeout(timer);
+        resolve(null);
+      },
+      { enableHighAccuracy: true, timeout: GPS_WAIT_MS, maximumAge: 60_000 },
+    );
+  });
+}
+
+// Records the SOS as a real incident so health workers see it right away.
+// Households get a silent anonymous Supabase session: no form, no delay.
+// Every SOS is unregistered until real BHW enrollment exists.
+// Resolves the incident id and whether a location was attached, or throws an
+// Error with a user-facing message.
+async function raiseSos(
+  note: string,
+): Promise<{ incidentId: string; locationShared: boolean }> {
+  const supabase = createClient();
+  const [location, sessionResult] = await Promise.all([
+    quickLocation(),
+    supabase.auth.getSession(),
+  ]);
+  if (!sessionResult.data.session) {
+    const { error } = await supabase.auth.signInAnonymously();
+    if (error) throw new Error("Couldn't reach Res+. Call by phone or 911.");
+  }
+  const res = await fetch("/api/incidents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      withProfile: false,
+      note: note.trim() || undefined,
+      location,
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    incidentId?: string;
+    error?: string;
+  };
+  if (!res.ok || !body.incidentId) {
+    throw new Error(body.error ?? "Couldn't record the SOS. Call by phone or 911.");
+  }
+  return { incidentId: body.incidentId, locationShared: location !== null };
+}
 
 export default function HouseholdLanding() {
   const [mode, setMode] = useState<Mode>("choosing");
   const [status, setStatus] = useState<IncidentStatus>("sos");
   const [note, setNote] = useState("");
-  const [showUnregistered, setShowUnregistered] = useState(false);
-  // Whether the SOS carried an enrolled profile (registered path) or not.
-  const [withIdentity, setWithIdentity] = useState(false);
+  const [showNote, setShowNote] = useState(false);
   const [sentAt, setSentAt] = useState<number | null>(null);
-  const patient = mockIncident.patient;
+  const [incidentId, setIncidentId] = useState<string | null>(null);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  // null until we know; then whether a GPS fix went with the SOS.
+  const [locationShared, setLocationShared] = useState<boolean | null>(null);
 
-  function startSos(withProfile: boolean) {
-    setWithIdentity(withProfile);
+  function startSos() {
     setStatus("sos");
     setSentAt(Date.now());
+    setIncidentId(null);
+    setSetupError(null);
+    setLocationShared(null);
+    // Show the live screen immediately; recording the SOS happens behind it.
     setMode("live");
     window.scrollTo({ top: 0 });
+    raiseSos(note).then(
+      (result) => {
+        setIncidentId(result.incidentId);
+        setLocationShared(result.locationShared);
+      },
+      (error: Error) => setSetupError(error.message),
+    );
   }
 
   function resetDemo() {
+    // The incident stays open in Res+; a new SOS from this device reuses it.
     setMode("choosing");
     setNote("");
-    setShowUnregistered(false);
+    setShowNote(false);
     setSentAt(null);
+    setIncidentId(null);
+    setSetupError(null);
+    setLocationShared(null);
   }
 
   return (
@@ -52,22 +131,20 @@ export default function HouseholdLanding() {
       <main className="mx-auto max-w-md px-4 pb-6 pt-5">
         {mode === "choosing" ? (
           <ChooseScreen
-            patientName={patient.name}
-            patientAge={patient.age}
-            conditions={patient.conditions}
             note={note}
             onNoteChange={setNote}
-            showUnregistered={showUnregistered}
-            onToggleUnregistered={() => setShowUnregistered((v) => !v)}
+            showNote={showNote}
+            onToggleNote={() => setShowNote((v) => !v)}
             onSos={startSos}
           />
         ) : (
           <LiveScreen
             status={status}
             sentAt={sentAt}
-            withIdentity={withIdentity}
+            incidentId={incidentId}
+            setupError={setupError}
+            locationShared={locationShared}
             note={note}
-            patient={patient}
             onReset={resetDemo}
           />
         )}
@@ -81,31 +158,18 @@ export default function HouseholdLanding() {
 /* ------------------------------------------------------------------ */
 
 function ChooseScreen({
-  patientName,
-  patientAge,
-  conditions,
   note,
   onNoteChange,
-  showUnregistered,
-  onToggleUnregistered,
+  showNote,
+  onToggleNote,
   onSos,
 }: {
-  patientName: string;
-  patientAge: number;
-  conditions: string[];
   note: string;
   onNoteChange: (v: string) => void;
-  showUnregistered: boolean;
-  onToggleUnregistered: () => void;
-  onSos: (withProfile: boolean) => void;
+  showNote: boolean;
+  onToggleNote: () => void;
+  onSos: () => void;
 }) {
-  const initials = patientName
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
     <div className="flex flex-col">
       <header className="text-center">
@@ -117,27 +181,8 @@ function ChooseScreen({
         </p>
       </header>
 
-      {/* Who this SOS is for */}
-      <div className="mt-5 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <span
-          aria-hidden
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-sm font-bold text-emergency"
-        >
-          {initials}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-slate-500">Sending as</p>
-          <p className="truncate text-base font-semibold text-slate-900">
-            {patientName}, {patientAge}
-          </p>
-          <p className="truncate text-xs text-slate-500">
-            {conditions.join(" · ")}
-          </p>
-        </div>
-        <Badge tone="green">Enrolled</Badge>
-      </div>
-
-      {/* Primary SOS */}
+      {/* Primary SOS. No profile needed: until BHW enrollment exists, every
+          SOS is unregistered and the health worker confirms details on the call. */}
       <div className="relative mx-auto mt-8 flex h-60 w-60 items-center justify-center">
         <span
           aria-hidden
@@ -149,8 +194,8 @@ function ChooseScreen({
         />
         <button
           type="button"
-          onClick={() => onSos(true)}
-          aria-label={`Send SOS with ${patientName}'s profile`}
+          onClick={onSos}
+          aria-label="Send SOS"
           className="relative flex h-48 w-48 select-none flex-col items-center justify-center rounded-full bg-emergency text-white shadow-[0_12px_30px_-6px_rgba(220,38,38,0.6)] transition active:scale-95 active:bg-emergency-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-red-300 focus-visible:ring-offset-4"
         >
           <span className="text-6xl font-black tracking-wider">SOS</span>
@@ -164,16 +209,16 @@ function ChooseScreen({
       <ul className="mt-8 grid grid-cols-3 gap-2 text-center">
         <Step icon={<PhoneCall aria-hidden className="h-5 w-5" />} label="Health worker calls you" />
         <Step icon={<Ambulance aria-hidden className="h-5 w-5" />} label="Ambulance gets ready" />
-        <Step icon={<MapPin aria-hidden className="h-5 w-5" />} label="Your location is shared" />
+        <Step icon={<MapPin aria-hidden className="h-5 w-5" />} label="Location shared if you allow it" />
       </ul>
 
-      {/* Unregistered path */}
+      {/* Optional details. The big SOS button never requires these. */}
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white shadow-sm">
         <button
           type="button"
-          onClick={onToggleUnregistered}
-          aria-expanded={showUnregistered}
-          aria-controls="unregistered-panel"
+          onClick={onToggleNote}
+          aria-expanded={showNote}
+          aria-controls="sos-note-panel"
           className="flex min-h-[56px] w-full items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
         >
           <span>
@@ -181,20 +226,20 @@ function ChooseScreen({
               Helping someone else?
             </span>
             <span className="block text-sm text-slate-500">
-              Not registered? No profile needed.
+              No profile needed. Add a short note if you can.
             </span>
           </span>
           <ChevronDown
             aria-hidden
             className={cn(
               "h-5 w-5 shrink-0 text-slate-400 transition-transform",
-              showUnregistered && "rotate-180",
+              showNote && "rotate-180",
             )}
           />
         </button>
 
-        {showUnregistered && (
-          <div id="unregistered-panel" className="px-4 pb-4">
+        {showNote && (
+          <div id="sos-note-panel" className="px-4 pb-4">
             <label
               htmlFor="sos-note"
               className="block text-sm font-medium text-slate-700"
@@ -211,15 +256,14 @@ function ChooseScreen({
               className="mt-1.5 w-full resize-none rounded-xl border border-slate-300 px-3 py-2.5 text-base focus:border-emergency focus:outline-none focus:ring-2 focus:ring-emergency/30"
             />
             <p className="mt-1.5 text-xs text-slate-500">
-              We send your location now. The health worker confirms details on
-              the call.
+              The health worker confirms the details on the call.
             </p>
             <button
               type="button"
-              onClick={() => onSos(false)}
+              onClick={onSos}
               className="mt-3 flex min-h-[56px] w-full items-center justify-center rounded-xl bg-emergency text-lg font-bold text-white shadow-sm transition active:scale-[0.98] active:bg-emergency-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-red-300"
             >
-              Send quick SOS
+              Send SOS with this note
             </button>
           </div>
         )}
@@ -246,16 +290,18 @@ function Step({ icon, label }: { icon: React.ReactNode; label: string }) {
 function LiveScreen({
   status,
   sentAt,
-  withIdentity,
+  incidentId,
+  setupError,
+  locationShared,
   note,
-  patient,
   onReset,
 }: {
   status: IncidentStatus;
   sentAt: number | null;
-  withIdentity: boolean;
+  incidentId: string | null;
+  setupError: string | null;
+  locationShared: boolean | null;
   note: string;
-  patient: typeof mockIncident.patient;
   onReset: () => void;
 }) {
   const elapsed = useElapsed(sentAt);
@@ -287,27 +333,12 @@ function LiveScreen({
         </p>
       </section>
 
-      {/* Live call */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-base font-semibold text-slate-900">
-              Connecting to nearest health worker…
-            </p>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Stay on the line and follow their guidance.
-            </p>
-          </div>
-          <Badge tone="green">● Live</Badge>
-        </div>
-        <a
-          href={BHW_PHONE}
-          className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl border-2 border-emergency bg-white text-base font-bold text-emergency transition active:bg-red-50 focus:outline-none focus-visible:ring-4 focus-visible:ring-red-200"
-        >
-          <PhoneCall aria-hidden className="h-5 w-5" />
-          Weak signal? Call by phone
-        </a>
-      </section>
+      {/* Live call (Agora). The phone fallback lives inside CallButton. */}
+      <CallButton
+        incidentId={incidentId}
+        setupError={setupError}
+        fallbackTel={BHW_PHONE}
+      />
 
       {/* Progress */}
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -323,31 +354,23 @@ function LiveScreen({
           <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Shared with the health worker
           </h2>
-          {!withIdentity && <Badge tone="amber">Unregistered</Badge>}
+          <Badge tone="amber">Unregistered</Badge>
         </div>
 
-        {withIdentity ? (
-          <dl className="divide-y divide-slate-100 text-sm">
-            <InfoRow label="Patient" value={`${patient.name}, ${patient.age}`} />
-            <InfoRow label="Conditions" value={patient.conditions.join(", ")} />
-            <InfoRow label="Address" value={patient.address} />
-            <InfoRow label="Landmark" value={patient.landmark} />
-          </dl>
-        ) : (
-          <>
-            <p className="flex items-start gap-2 text-sm text-slate-600">
-              <span className="mt-0.5 text-emergency">
-                <MapPin aria-hidden className="h-5 w-5" />
-              </span>
-              Location sent. The health worker will confirm identity and
-              details on the call.
-            </p>
-            {note && (
-              <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
-                “{note}”
-              </p>
-            )}
-          </>
+        <p className="flex items-start gap-2 text-sm text-slate-600">
+          <span className="mt-0.5 text-emergency">
+            <MapPin aria-hidden className="h-5 w-5" />
+          </span>
+          {locationShared === null
+            ? "Sending your SOS…"
+            : locationShared
+              ? "Your location was sent. The health worker will confirm who needs help on the call."
+              : "Location not shared. Tell the health worker where you are when they call."}
+        </p>
+        {note && (
+          <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+            “{note}”
+          </p>
         )}
       </section>
 
@@ -360,15 +383,6 @@ function LiveScreen({
           Reset demo
         </button>
       </div>
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-3 py-2 first:pt-0 last:pb-0">
-      <dt className="w-24 shrink-0 text-slate-500">{label}</dt>
-      <dd className="min-w-0 flex-1 font-medium text-slate-900">{value}</dd>
     </div>
   );
 }
