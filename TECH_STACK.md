@@ -17,8 +17,8 @@ Built around the flow in [FLOW.md](./FLOW.md).
 | Silent transcription | **Agora Real-Time STT** | Transcribes the call in the background |
 | Transcript fallback | **Web Speech API** (`fil-PH`) or typed notes | Keeps triage working if STT fails |
 | AI triage | **Amazon Bedrock (Claude)** + **zod** | Turns the transcript into a structured triage card + missing fields |
-| Map + traffic heat map | **Google Maps JavaScript API** (TrafficLayer) | Live traffic colors on the map |
-| Routes + ETAs | **Google Routes API** | Alternate routes with traffic-aware ETAs, hospital ranking |
+| Map + traffic heat map | **Leaflet** + **TomTom Map Display** and **Traffic Flow** tiles | Live traffic colors on the map, free tier with no credit card |
+| Routes + ETAs | **TomTom Routing API** | Traffic-aware ETAs, up to 5 alternate routes, `betterRoute` reroute checks, hospital ranking |
 | Turn-by-turn | **Google Maps / Waze deep links** | Crews use navigation they already trust |
 | Protocol cards | **Versioned JSON in the repo** | Fixed, clinician-reviewed content. AI never writes medical advice. |
 | Tests | **Vitest + Testing Library**, **Playwright** (e2e) | Unit tests + one full SOS-to-arrival test |
@@ -34,9 +34,9 @@ Built around the flow in [FLOW.md](./FLOW.md).
 | 2. BHW confirms | Live call, Confirm emergency → dispatch | Agora RTC, Agora STT starts, status → `confirmed` |
 | 3. Coaching | BHW reads protocol card on the call | Protocol JSON, chosen by condition |
 | 4. BHW on scene | Vitals, first aid, missing fields | Supabase updates → Realtime |
-| 5. Ambulance on scene | Hospital recommendation + reason, Unstable toggle | Routes API `computeRouteMatrix` + capability/bed filter |
+| 5. Ambulance on scene | Hospital recommendation + reason, Unstable toggle | TomTom Routing (traffic-aware ETA per candidate) + capability/bed filter |
 | 6. ER confirms/diverts | Accept, divert, 2-min auto-escalate | Realtime + pg_cron escalation |
-| 7. En route | Traffic heat map, 2–3 routes with ETAs, reroute suggestion | Maps JS TrafficLayer, Routes API `computeRoutes` (alternatives), GPS pings |
+| 7. En route | Traffic heat map, 2–3 routes with ETAs, reroute suggestion | TomTom Traffic Flow tiles, TomTom Routing (`maxAlternatives`, `betterRoute`), GPS pings |
 | 8. Arrival | Handoff, timeline closes | `incident_events` audit log |
 | Always | Call 911, tap-to-call fallback | `tel:911`, `tel:<bhw_phone>` links |
 
@@ -63,7 +63,7 @@ Statuses: `sos → confirmed → bhw_on_scene → ambulance_on_scene → transpo
 | **Supabase** | New project (Singapore region), PostGIS + pg_cron extensions, Phone auth | Project URL, anon key, service_role key |
 | **Agora** | Project in Secure mode (App ID + Token), Real-Time STT, RESTful API credentials | App ID, App Certificate, Customer ID, Customer Secret |
 | **AWS Bedrock** | Model access for Claude, IAM user with `bedrock:InvokeModel` only | Access key ID, secret, region, model ID |
-| **Google Cloud** | Billing on, Maps JavaScript API, Routes API, budget alert | Browser key (referrer-restricted), server key (Routes only) |
+| **TomTom** | Free account at my.tomtom.com (no credit card) | API key (set a domain whitelist for the browser key) |
 | **SMS for OTP** | Twilio (or other provider) connected to Supabase Phone auth | Provider credentials (set inside Supabase, not in the app) |
 | **Vercel** | Import GitHub repo, add env vars | — |
 
@@ -89,9 +89,9 @@ AWS_SECRET_ACCESS_KEY=            # server only
 AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=
 
-# Google
-NEXT_PUBLIC_GOOGLE_MAPS_KEY=      # browser key, referrer-restricted
-GOOGLE_ROUTES_KEY=                # server only
+# TomTom
+NEXT_PUBLIC_TOMTOM_KEY=           # browser key, domain-whitelisted
+TOMTOM_ROUTING_KEY=               # optional, server only (/api/routes)
 ```
 
 ## Security rules
@@ -101,11 +101,11 @@ GOOGLE_ROUTES_KEY=                # server only
 - Row Level Security on every table: households see only their own patients/incidents, ER sees only incidents assigned to its hospital.
 - Validate every API input with zod. Log every state change to `incident_events`.
 - Consent recorded at enrollment. Minimum patient data. No real patient data in seeds.
-- Rotate or delete AWS and Google keys after the hackathon.
+- Rotate or delete AWS and TomTom keys after the hackathon.
 
 ## Reliability rules
-- External calls (Bedrock, Routes, Agora) have timeouts, retries, and fallbacks.
-- Routes API results are cached; recomputed at most once per minute per incident.
+- External calls (Bedrock, TomTom, Agora) have timeouts, retries, and fallbacks.
+- Routing results are cached; recomputed at most once per minute per incident.
 - AI failure never blocks dispatch. The BHW can always type or tap the triage manually.
 - Escalation timers run in the database (pg_cron), not in a phone's browser.
 
@@ -117,7 +117,7 @@ GOOGLE_ROUTES_KEY=                # server only
 
 ## Setup order (hour 0)
 1. Request Bedrock model access (can take time)
-2. Google Cloud billing + both keys + budget alert
+2. TomTom account + API key (my.tomtom.com)
 3. Agora project + STT + REST credentials
 4. Supabase project + PostGIS + pg_cron + phone auth test numbers
 5. GitHub repo + Vercel project + env vars

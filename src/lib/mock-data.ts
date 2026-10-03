@@ -3,9 +3,12 @@
 
 import type { Incident, ProtocolCard } from "./types";
 
+// Coordinates: hospitals match supabase/seed.sql. The scene is a synthetic
+// point in Quezon City for the demo patient (not a real address).
 export const mockIncident: Incident = {
   id: "INC-2026-0001",
   status: "sos",
+  location: { lat: 14.67, lng: 121.062 },
   unstable: false,
   patient: {
     id: "PAT-001",
@@ -18,6 +21,18 @@ export const mockIncident: Incident = {
     address: "14 Mabini St, Barangay San Roque, Quezon City",
     landmark: "Blue gate beside the sari-sari store",
   },
+  // Matches the QC-Rescue-01 row in supabase/seed.sql (its base location).
+  ambulance: {
+    id: "AMB-01",
+    unitName: "QC-Rescue-01",
+    location: { lat: 14.678, lng: 121.045 },
+  },
+  // Synthetic position a few blocks from the scene: the BHW is on the way.
+  bhw: {
+    id: "BHW-01",
+    name: "Demo BHW",
+    location: { lat: 14.6728, lng: 121.0588 },
+  },
   triage: {
     chiefComplaint: "Sudden one-sided weakness, slurred speech",
     onsetTime: null,
@@ -28,6 +43,7 @@ export const mockIncident: Incident = {
     {
       id: "H1",
       name: "QC General Hospital",
+      location: { lat: 14.676, lng: 121.043 },
       level: "Level 2",
       capabilities: ["CT", "ICU", "trauma"],
       bedsAvailable: 3,
@@ -38,6 +54,7 @@ export const mockIncident: Incident = {
     {
       id: "H2",
       name: "St. Luke's QC",
+      location: { lat: 14.624, lng: 121.028 },
       level: "Level 3",
       capabilities: ["CT", "ICU", "cath_lab", "trauma"],
       bedsAvailable: 1,
@@ -48,6 +65,7 @@ export const mockIncident: Incident = {
     {
       id: "H3",
       name: "Barangay Health Station",
+      location: { lat: 14.68, lng: 121.05 },
       level: "Level 1",
       capabilities: [],
       bedsAvailable: 0,
@@ -56,32 +74,9 @@ export const mockIncident: Incident = {
       reason: "No CT; not suitable for stroke",
     },
   ],
-  routes: [
-    {
-      id: "R1",
-      label: "Via Commonwealth Ave",
-      etaSeconds: 11 * 60,
-      distanceM: 6200,
-      traffic: "moderate",
-      isSelected: true,
-    },
-    {
-      id: "R2",
-      label: "Via Tandang Sora",
-      etaSeconds: 13 * 60,
-      distanceM: 5800,
-      traffic: "light",
-      isSelected: false,
-    },
-    {
-      id: "R3",
-      label: "Via Luzon Ave",
-      etaSeconds: 16 * 60,
-      distanceM: 7100,
-      traffic: "heavy",
-      isSelected: false,
-    },
-  ],
+  // Routes are computed live (TomTom, via /api/routes) for the current leg,
+  // so the demo incident doesn't carry canned ones.
+  routes: [],
   timeline: [
     { type: "SOS raised", actor: "Household", at: "2026-10-04T09:12:00+08:00" },
   ],

@@ -14,3 +14,103 @@ body {
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
 }
+
+/* ------------------------------------------------------------------ */
+/* Incident map motion (src/components/incident-map-leaflet.tsx).      */
+/* Small transform/opacity animations only, so they stay cheap on      */
+/* phones. All of them stop for users who prefer reduced motion.       */
+/* ------------------------------------------------------------------ */
+@keyframes rp-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes rp-bob {
+  0%,
+  100% {
+    transform: translate(-50%, 0);
+  }
+  50% {
+    transform: translate(-50%, -3px);
+  }
+}
+
+@keyframes rp-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes rp-arrow-flow {
+  0% {
+    opacity: 0.25;
+    transform: translateX(-2px);
+  }
+  25% {
+    opacity: 1;
+    transform: translateX(1px);
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+    transform: translateX(3px);
+  }
+}
+
+.rp-marker {
+  position: relative;
+}
+
+.rp-pop {
+  animation: rp-pop 0.28s ease-out both;
+}
+
+/* Ring that grows and fades behind a marker circle. */
+.rp-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: rp-pulse 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Emoji floating above a marker circle. */
+.rp-emoji {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin-bottom: 2px;
+  line-height: 1;
+  transform: translateX(-50%);
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35));
+  pointer-events: none;
+  animation: rp-bob 2.6s ease-in-out infinite;
+}
+
+/* Direction arrows on the selected route: a wave runs start -> end. */
+.rp-arrow {
+  animation: rp-arrow-flow 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-pop,
+  .rp-emoji,
+  .rp-arrow {
+    animation: none;
+  }
+  .rp-pulse {
+    display: none;
+  }
+}

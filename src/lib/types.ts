@@ -34,6 +34,13 @@ export const STATUS_LABEL: Record<IncidentStatus, string> = {
   closed: "Closed",
 };
 
+// WGS84 coordinates in {lat, lng} order (Leaflet/TomTom order). PostGIS stores
+// the same point as st_point(lng, lat), so swap carefully at the DB boundary.
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
 export interface Patient {
   id: string;
   name: string;
@@ -59,6 +66,7 @@ export interface TriageCard {
 export interface Hospital {
   id: string;
   name: string;
+  location: LatLng;
   level: string;
   capabilities: string[]; // CT, ICU, cath_lab, pedia, OB, trauma
   bedsAvailable: number;
@@ -67,13 +75,37 @@ export interface Hospital {
   reason: string;
 }
 
+// "unknown" is used when live routing is unavailable (straight-line estimate).
+export type TrafficLevel = "light" | "moderate" | "heavy" | "unknown";
+
 export interface RouteOption {
   id: string;
   label: string;
   etaSeconds: number;
   distanceM: number;
-  traffic: "light" | "moderate" | "heavy";
+  traffic: TrafficLevel;
+  // Extra seconds from live traffic incidents (jams, closures) on this route.
+  trafficDelaySeconds: number;
   isSelected: boolean;
+  // Road geometry for drawing the route on the map.
+  path: LatLng[];
+  // true when live routing failed and this is a rough straight-line estimate.
+  estimated?: boolean;
+}
+
+export interface Ambulance {
+  id: string;
+  unitName: string;
+  // Last known position. Live GPS pings come later; the seed base for now.
+  location: LatLng | null;
+}
+
+// A person responding on foot or by motorbike, e.g. the assigned BHW.
+export interface Responder {
+  id: string;
+  name: string;
+  // Last known position. Live GPS pings come later; a demo value for now.
+  location: LatLng | null;
 }
 
 export interface IncidentEvent {
@@ -85,7 +117,14 @@ export interface IncidentEvent {
 export interface Incident {
   id: string;
   status: IncidentStatus;
+  // SOS GPS fix, i.e. the scene. null when the phone couldn't get a fix
+  // (FLOW.md "Bad GPS": fall back to home address + landmark).
+  location: LatLng | null;
   patient: Patient;
+  // Assigned ambulance unit, once dispatched.
+  ambulance: Ambulance | null;
+  // BHW who confirmed the emergency and is heading to (or at) the scene.
+  bhw: Responder | null;
   unstable: boolean;
   triage: TriageCard;
   hospitals: Hospital[];
