@@ -1,0 +1,17 @@
+{
+  "name": "Res+ Emergency Coordination",
+  "short_name": "Res+",
+  "description": "One live record of the emergency, shared across families, BHWs, ambulance crews, and ERs.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
