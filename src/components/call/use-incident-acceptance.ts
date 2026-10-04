@@ -6,6 +6,7 @@
 // realtime socket is blocked or drops.
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { STATUS_ORDER, type IncidentStatus } from "@/lib/types";
 
 const POLL_MS = 4000;
 
@@ -17,13 +18,16 @@ interface Row {
 export function useIncidentAcceptance(incidentId: string | null): {
   accepted: boolean;
   closed: boolean;
+  status: IncidentStatus;
 } {
   const [accepted, setAccepted] = useState(false);
   const [closed, setClosed] = useState(false);
+  const [status, setStatus] = useState<IncidentStatus>("sos");
 
   useEffect(() => {
     setAccepted(false);
     setClosed(false);
+    setStatus("sos");
     if (!incidentId) return;
 
     const supabase = createClient();
@@ -31,6 +35,9 @@ export function useIncidentAcceptance(incidentId: string | null): {
     const apply = (row: Row | null) => {
       if (stopped || !row) return;
       if (row.assigned_bhw) setAccepted(true);
+      if (row.status && STATUS_ORDER.includes(row.status as IncidentStatus)) {
+        setStatus(row.status as IncidentStatus);
+      }
       if (row.status === "closed") {
         setClosed(true);
         stopped = true; // nothing more to watch
@@ -74,5 +81,5 @@ export function useIncidentAcceptance(incidentId: string | null): {
     };
   }, [incidentId]);
 
-  return { accepted, closed };
+  return { accepted, closed, status };
 }

@@ -8,7 +8,6 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Mic, MicOff, PhoneCall, PhoneOff, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { useIncidentAcceptance } from "./use-incident-acceptance";
 import {
   FAILURE_MESSAGE,
   NO_ANSWER_MS,
@@ -26,17 +25,23 @@ export function CallButton({
   setupError,
   fallbackTel,
   onNewSos,
+  accepted,
+  closed,
 }: {
   // null while the SOS is still being recorded.
   incidentId: string | null;
   setupError: string | null;
   fallbackTel: string;
+  // One shared incident watcher is owned by the parent LiveScreen. Passing its
+  // state here avoids two components subscribing to the same Realtime channel.
+  accepted: boolean;
+  closed: boolean;
   // Back to the SOS screen, used once the health worker closes this SOS.
   onNewSos: () => void;
 }) {
   const call = useAgoraCall({ incidentId, role: "household" });
-  const { accepted, closed } = useIncidentAcceptance(incidentId);
   const waitingTooLong = useWaitedTooLong(incidentId, accepted);
+  const autoStarted = useRef<string | null>(null);
 
   // The health worker closed this SOS: leave any call still waiting.
   const { end } = call;
@@ -44,6 +49,15 @@ export function CallButton({
     if (closed) end();
   }, [closed, end]);
 
+  // Join the call automatically, once, as soon as a BHW accepts.
+  useEffect(() => {
+    if (accepted && incidentId && autoStarted.current !== incidentId) {
+      autoStarted.current = incidentId;
+      call.start();
+    }
+  }, [accepted, incidentId, call]);
+
+  // Keep every hook above conditional rendering.
   if (closed) {
     return (
       <section
@@ -79,15 +93,6 @@ export function CallButton({
       </section>
     );
   }
-
-  // Join the call automatically, once, as soon as a BHW accepts.
-  const autoStarted = useRef<string | null>(null);
-  useEffect(() => {
-    if (accepted && incidentId && autoStarted.current !== incidentId) {
-      autoStarted.current = incidentId;
-      call.start();
-    }
-  }, [accepted, incidentId, call]);
 
   const inCall =
     call.state === "connecting" || call.state === "ringing" || call.state === "connected";

@@ -5,6 +5,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { parseEwkbPoint } from "@/lib/geo/ewkb";
 import type { IncidentStatus, LatLng } from "@/lib/types";
+import type { IncidentTriage } from "@/lib/incidents/triage";
 import type { CallEventType } from "@/lib/agora/channel";
 
 export interface IncidentRecord {
@@ -12,9 +13,14 @@ export interface IncidentRecord {
   status: IncidentStatus;
   reporter_id: string | null;
   assigned_bhw: string | null;
+  assigned_hospital: string | null;
   patient_id: string | null;
   note: string | null;
+  triage: Record<string, unknown>;
+  missing_fields: string[];
+  unstable: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export interface TranscriptRow {
@@ -24,10 +30,16 @@ export interface TranscriptRow {
   source_key: string;
 }
 
-export type IncidentEventType = CallEventType | "sos_created" | "incident_closed";
+export type IncidentEventType =
+  | CallEventType
+  | "sos_created"
+  | "incident_closed"
+  | "triage_updated"
+  | "status_changed"
+  | "hospital_assigned";
 
 const INCIDENT_COLUMNS =
-  "id,status,reporter_id,assigned_bhw,patient_id,note,created_at";
+  "id,status,reporter_id,assigned_bhw,assigned_hospital,patient_id,note,triage,missing_fields,unstable,created_at,updated_at";
 
 // The hand-written Database type doesn't satisfy supabase-js 2.117's write
 // inference, so write payloads type-check as `never`. Regenerate types with
@@ -135,6 +147,83 @@ export async function claimIncident(
     .eq("id", incidentId)
     .neq("status", "closed")
     .or(`assigned_bhw.is.null,assigned_bhw.eq.${bhwId}`)
+    .select(INCIDENT_COLUMNS)
+    .maybeSingle<IncidentRecord>();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateIncidentTriage(
+  incidentId: string,
+  triage: IncidentTriage,
+  missingFields: string[],
+  unstable: boolean,
+): Promise<IncidentRecord | null> {
+  const { data, error } = await createAdminClient()
+    .from("incidents")
+    .update(
+      payload({
+        triage,
+        missing_fields: missingFields,
+        unstable,
+        updated_at: new Date().toISOString(),
+      }),
+    )
+    .eq("id", incidentId)
+    .neq("status", "closed")
+    .select(INCIDENT_COLUMNS)
+    .maybeSingle<IncidentRecord>();
+  if (error) throw error;
+  return data;
+}
+
+// Compare-and-set prevents two devices from advancing the same stale status.
+export async function transitionIncidentStatus(
+  incidentId: string,
+  expectedStatus: IncidentStatus,
+  nextStatus: IncidentStatus,
+): Promise<IncidentRecord | null> {
+  const { data, error } = await createAdminClient()
+    .from("incidents")
+    .update(payload({ status: nextStatus, updated_at: new Date().toISOString() }))
+    .eq("id", incidentId)
+    .eq("status", expectedStatus)
+    .select(INCIDENT_COLUMNS)
+    .maybeSingle<IncidentRecord>();
+  if (error) throw error;
+  return data;
+}
+
+export interface HospitalRecord {
+  id: string;
+  name: string;
+  is_diverting: boolean;
+}
+
+export async function getHospital(id: string): Promise<HospitalRecord | null> {
+  const { data, error } = await createAdminClient()
+    .from("hospitals")
+    .select("id,name,is_diverting")
+    .eq("id", id)
+    .maybeSingle<HospitalRecord>();
+  if (error) throw error;
+  return data;
+}
+
+// The assigned BHW records the ambulance crew's explicit destination choice.
+export async function assignIncidentHospital(
+  incidentId: string,
+  bhwId: string,
+  hospitalId: string,
+): Promise<IncidentRecord | null> {
+  const { data, error } = await createAdminClient()
+    .from("incidents")
+    .update(
+      payload({ assigned_hospital: hospitalId, updated_at: new Date().toISOString() }),
+    )
+    .eq("id", incidentId)
+    .eq("assigned_bhw", bhwId)
+    .eq("status", "transporting")
     .select(INCIDENT_COLUMNS)
     .maybeSingle<IncidentRecord>();
   if (error) throw error;

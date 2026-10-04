@@ -7,6 +7,8 @@ import type { Role } from "@/lib/types";
 export interface Caller {
   id: string;
   role: Role;
+  // ER staff are authorized at hospital level, not across all hospitals.
+  hospitalId?: string | null;
 }
 
 export async function getCaller(): Promise<Caller | null> {
@@ -19,9 +21,9 @@ export async function getCaller(): Promise<Caller | null> {
 
   const { data } = await supabase
     .from("profiles")
-    .select("role")
+    .select("role,hospital_id")
     .eq("id", user.id)
-    .single<{ role: Role }>();
+    .single<{ role: Role; hospital_id: string | null }>();
   if (!data) return null;
-  return { id: user.id, role: data.role };
+  return { id: user.id, role: data.role, hospitalId: data.hospital_id };
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Ambulance, ChevronDown, MapPin, PhoneCall } from "lucide-react";
 import { Badge } from "@/components/ui";
 import { CallButton } from "@/components/call/CallButton";
+import { useIncidentAcceptance } from "@/components/call/use-incident-acceptance";
 import { StatusStepper } from "@/components/status-stepper";
 import { TopBar } from "@/components/top-bar";
 import { createClient } from "@/lib/supabase/client";
@@ -305,6 +306,9 @@ function LiveScreen({
   onReset: () => void;
 }) {
   const elapsed = useElapsed(sentAt);
+  // Persisted status from the BHW/ER replaces the initial local `sos` value.
+  const incidentState = useIncidentAcceptance(incidentId);
+  const sharedStatus = incidentId ? incidentState.status : status;
 
   return (
     <div className="space-y-4">
@@ -329,7 +333,7 @@ function LiveScreen({
           Help is coming
         </h1>
         <p className="mt-1 text-base text-white/90">
-          {STATUS_LABEL[status]}. Keep your phone close and the volume up.
+          {STATUS_LABEL[sharedStatus]}. Keep your phone close and the volume up.
         </p>
       </section>
 
@@ -338,6 +342,8 @@ function LiveScreen({
         incidentId={incidentId}
         setupError={setupError}
         fallbackTel={BHW_PHONE}
+        accepted={incidentState.accepted}
+        closed={incidentState.closed}
         onNewSos={onReset}
       />
 
@@ -346,7 +352,7 @@ function LiveScreen({
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Progress
         </h2>
-        <StatusStepper status={status} variant="vertical" />
+        <StatusStepper status={sharedStatus} variant="vertical" />
       </section>
 
       {/* Shared info */}

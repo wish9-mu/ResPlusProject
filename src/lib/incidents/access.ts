@@ -2,6 +2,7 @@
 // easy to unit test; route handlers load the data and call these.
 import type { CallRole } from "@/lib/agora/channel";
 import type { Caller } from "./caller";
+import type { IncidentStatus } from "@/lib/types";
 import type { IncidentRecord } from "./repo";
 
 export type AccessDecision =
@@ -24,6 +25,69 @@ function isReporter(caller: Caller, incident: IncidentRecord) {
 
 function isAssignedBhw(caller: Caller, incident: IncidentRecord) {
   return caller.role === "bhw" && incident.assigned_bhw === caller.id;
+}
+
+function isErForIncident(caller: Caller, incident: IncidentRecord) {
+  return (
+    caller.role === "er" &&
+    !!caller.hospitalId &&
+    caller.hospitalId === incident.assigned_hospital
+  );
+}
+
+// Only the assigned BHW or staff at the assigned ER may update the shared
+// triage card. Closed incidents are immutable.
+export function canEditTriage(
+  caller: Caller,
+  incident: IncidentRecord,
+): AccessDecision {
+  if (incident.status === "closed") return deny("This incident is closed.", 409);
+  return isAssignedBhw(caller, incident) || isErForIncident(caller, incident)
+    ? allow
+    : deny("You are not assigned to this incident.");
+}
+
+const BHW_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus>> = {
+  sos: "confirmed",
+  confirmed: "bhw_on_scene",
+  bhw_on_scene: "ambulance_on_scene",
+  ambulance_on_scene: "transporting",
+};
+const ER_TRANSITIONS: Partial<Record<IncidentStatus, IncidentStatus>> = {
+  transporting: "arrived",
+  arrived: "closed",
+};
+
+// Enforces the FLOW.md state order and which role owns each transition.
+export function canTransitionStatus(
+  caller: Caller,
+  incident: IncidentRecord,
+  nextStatus: IncidentStatus,
+): AccessDecision {
+  if (incident.status === "closed") return deny("This incident is closed.", 409);
+  const expected =
+    isAssignedBhw(caller, incident)
+      ? BHW_TRANSITIONS[incident.status]
+      : isErForIncident(caller, incident)
+        ? ER_TRANSITIONS[incident.status]
+        : undefined;
+  if (!expected) return deny("Your role cannot update this status.");
+  return expected === nextStatus
+    ? allow
+    : deny(`The next allowed status is ${expected}.`, 409);
+}
+
+// The BHW records the hospital only after the ambulance crew confirms it.
+export function canAssignHospital(
+  caller: Caller,
+  incident: IncidentRecord,
+): AccessDecision {
+  if (!isAssignedBhw(caller, incident)) {
+    return deny("Only the assigned BHW can record the crew's destination.");
+  }
+  return incident.status === "transporting"
+    ? allow
+    : deny("Mark the patient picked up before choosing a hospital.", 409);
 }
 
 // May this caller join the incident's Agora channel in the given role?

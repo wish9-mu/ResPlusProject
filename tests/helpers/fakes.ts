@@ -4,6 +4,7 @@
 //   vi.mock("@/lib/incidents/caller", async () => (await import("./helpers/fakes")).fakeCaller);
 import { randomUUID } from "node:crypto";
 import type { Caller } from "@/lib/incidents/caller";
+import type { IncidentStatus } from "@/lib/types";
 import type {
   IncidentEventType,
   IncidentRecord,
@@ -16,6 +17,8 @@ export interface StoredEvent {
   type: IncidentEventType;
   payload: Record<string, unknown>;
 }
+
+export const TEST_HOSPITAL_ID = "77777777-7777-4777-8777-777777777777";
 
 export const db = {
   incidents: new Map<string, IncidentRecord>(),
@@ -46,9 +49,14 @@ export function seedIncident(overrides: Partial<IncidentRecord> = {}): IncidentR
     status: "sos",
     reporter_id: null,
     assigned_bhw: null,
+    assigned_hospital: null,
     patient_id: null,
     note: null,
+    triage: {},
+    missing_fields: [],
+    unstable: false,
     created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
     ...overrides,
   };
   db.incidents.set(record.id, record);
@@ -93,6 +101,48 @@ export const fakeRepo = {
     return record;
   },
   getIncidentLocation: async (id: string) => db.locations.get(id) ?? null,
+  updateIncidentTriage: async (
+    id: string,
+    triage: Record<string, unknown>,
+    missingFields: string[],
+    unstable: boolean,
+  ) => {
+    const incident = db.incidents.get(id);
+    if (!incident || incident.status === "closed") return null;
+    incident.triage = triage;
+    incident.missing_fields = missingFields;
+    incident.unstable = unstable;
+    incident.updated_at = new Date().toISOString();
+    return { ...incident };
+  },
+  transitionIncidentStatus: async (
+    id: string,
+    expected: IncidentStatus,
+    next: IncidentStatus,
+  ) => {
+    const incident = db.incidents.get(id);
+    if (!incident || incident.status !== expected) return null;
+    incident.status = next;
+    incident.updated_at = new Date().toISOString();
+    return { ...incident };
+  },
+  getHospital: async (id: string) =>
+    id === TEST_HOSPITAL_ID
+      ? { id, name: "Test Hospital", is_diverting: false }
+      : null,
+  assignIncidentHospital: async (id: string, bhwId: string, hospitalId: string) => {
+    const incident = db.incidents.get(id);
+    if (
+      !incident ||
+      incident.assigned_bhw !== bhwId ||
+      incident.status !== "transporting"
+    ) {
+      return null;
+    }
+    incident.assigned_hospital = hospitalId;
+    incident.updated_at = new Date().toISOString();
+    return { ...incident };
+  },
   updateIncidentDetails: async (
     id: string,
     details: { location?: { lat: number; lng: number }; note?: string },

@@ -12,7 +12,7 @@ export default async function ErPage() {
       identity={identity}
       demo={demo}
     >
-      <ErDashboard />
+      <ErDashboard demo={demo} />
     </StaffShell>
   );
 }

@@ -20,7 +20,7 @@ interface IncidentRow {
   assigned_bhw: string | null;
   assigned_ambulance: string | null;
   assigned_hospital: string | null;
-  triage: Record<string, unknown>;
+  triage: import("@/lib/incidents/triage").IncidentTriage;
   missing_fields: string[];
   unstable: boolean;
   escalation_deadline: string | null;
