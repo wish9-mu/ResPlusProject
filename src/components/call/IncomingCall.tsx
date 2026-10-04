@@ -11,6 +11,8 @@ export interface IncomingCallInfo {
   patientName: string | null;
   note: string | null;
   startedAt: string;
+  // An incident this BHW already accepted; the household is calling again.
+  callback?: boolean;
 }
 
 export function IncomingCall({
@@ -35,7 +37,9 @@ export function IncomingCall({
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emergency opacity-75 motion-reduce:animate-none" />
           <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emergency" />
         </span>
-        New SOS · waiting for a health worker
+        {call.callback
+          ? "Your caller is calling back"
+          : "New SOS · waiting for a health worker"}
       </div>
       <h2
         id={`incoming-${call.incidentId}`}
@@ -52,7 +56,9 @@ export function IncomingCall({
         </p>
       )}
       <p className="mt-2 text-xs text-slate-500">
-        Accepting connects the call. It does not dispatch the ambulance.
+        {call.callback
+          ? "They're on the line now. Rejoin to talk."
+          : "Accepting connects the call. It does not dispatch the ambulance."}
       </p>
 
       <div className="mt-4 flex gap-2">
@@ -67,7 +73,7 @@ export function IncomingCall({
           ) : (
             <Phone aria-hidden className="h-5 w-5" />
           )}
-          Accept
+          {call.callback ? "Rejoin" : "Accept"}
         </button>
         <button
           type="button"

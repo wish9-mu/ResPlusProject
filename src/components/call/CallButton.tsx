@@ -25,15 +25,60 @@ export function CallButton({
   incidentId,
   setupError,
   fallbackTel,
+  onNewSos,
 }: {
   // null while the SOS is still being recorded.
   incidentId: string | null;
   setupError: string | null;
   fallbackTel: string;
+  // Back to the SOS screen, used once the health worker closes this SOS.
+  onNewSos: () => void;
 }) {
   const call = useAgoraCall({ incidentId, role: "household" });
-  const { accepted } = useIncidentAcceptance(incidentId);
+  const { accepted, closed } = useIncidentAcceptance(incidentId);
   const waitingTooLong = useWaitedTooLong(incidentId, accepted);
+
+  // The health worker closed this SOS: leave any call still waiting.
+  const { end } = call;
+  useEffect(() => {
+    if (closed) end();
+  }, [closed, end]);
+
+  if (closed) {
+    return (
+      <section
+        aria-live="polite"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
+        <p className="text-base font-semibold text-slate-900">This SOS was closed</p>
+        <p className="mt-0.5 text-sm text-slate-500">
+          A health worker closed it. If you still need help, send a new SOS.
+        </p>
+        <div className="mt-4 space-y-2">
+          <button
+            type="button"
+            onClick={onNewSos}
+            className={cn(
+              primaryBtn,
+              "bg-emergency text-white focus-visible:ring-red-300 active:bg-emergency-dark",
+            )}
+          >
+            Send a new SOS
+          </button>
+          <a
+            href={fallbackTel}
+            className={cn(
+              primaryBtn,
+              "border-2 border-emergency bg-white text-base text-emergency focus-visible:ring-red-200",
+            )}
+          >
+            <PhoneCall aria-hidden className="h-5 w-5" />
+            Call by phone
+          </a>
+        </div>
+      </section>
+    );
+  }
 
   // Join the call automatically, once, as soon as a BHW accepts.
   const autoStarted = useRef<string | null>(null);
@@ -175,7 +220,7 @@ function headline(state: CallState, waiting: boolean, hasError: boolean): string
     case "connecting":
       return "Connecting you to the health worker…";
     case "ringing":
-      return "Connecting…";
+      return "Waiting for the health worker to join…";
     case "connected":
       return "Connected to a health worker";
     case "ended":
@@ -204,8 +249,10 @@ function subline(
       ? "No one has accepted yet. Keep waiting, or call by phone."
       : "Your SOS was sent. The call connects as soon as a health worker accepts.";
   }
-  if (state === "ringing" && s.noAnswer) {
-    return "The health worker hasn't joined yet. Keep waiting, or call by phone.";
+  if (state === "ringing") {
+    return s.noAnswer
+      ? "The health worker hasn't joined yet. Keep waiting, or call by phone."
+      : "You're on the line. The health worker's screen is ringing.";
   }
   if (state === "connected") return "Stay on the line and follow their guidance.";
   if (state === "ended") return "Help is still on the way. Call again if you need to.";

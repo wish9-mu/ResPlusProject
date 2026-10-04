@@ -9,6 +9,7 @@ import {
   findDemoPatientId,
   findOpenIncidentForReporter,
   logEventSafe,
+  updateIncidentDetails,
 } from "@/lib/incidents/repo";
 
 const phPoint = z.object({
@@ -35,6 +36,11 @@ export async function POST(request: Request) {
   try {
     const existing = await findOpenIncidentForReporter(caller.id);
     if (existing) {
+      // Same emergency, sent again: keep the newest location and note.
+      await updateIncidentDetails(existing.id, {
+        location: location ?? undefined,
+        note: note || undefined,
+      });
       return NextResponse.json({ incidentId: existing.id, reused: true });
     }
 

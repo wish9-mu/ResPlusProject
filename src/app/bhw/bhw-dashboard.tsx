@@ -11,12 +11,14 @@ import { Button, Card, Badge } from "@/components/ui";
 import { StatusStepper } from "@/components/status-stepper";
 import { mockIncident, protocolCards } from "@/lib/mock-data";
 import type { PatientSummary } from "@/lib/incidents/repo";
-import type { IncidentStatus } from "@/lib/types";
+import type { IncidentStatus, LatLng } from "@/lib/types";
+import { CallerLocationMap } from "@/components/call/CallerLocationMap";
 
 export interface BhwIncidentView {
   incidentId: string;
   patient: PatientSummary | null; // null = unregistered caller
   note: string | null;
+  location: LatLng | null; // caller's SOS GPS fix, null if not shared
 }
 
 interface CallerView {
@@ -115,6 +117,12 @@ export function BhwDashboard({ incident }: { incident?: BhwIncidentView }) {
           )}
         </div>
       </Card>
+
+      {incident && (
+        <Card title="Caller location">
+          <CallerLocationMap location={incident.location} />
+        </Card>
+      )}
 
       {status === "sos" && (
         <Card>

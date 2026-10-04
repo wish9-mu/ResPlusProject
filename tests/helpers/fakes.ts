@@ -21,6 +21,7 @@ export const db = {
   incidents: new Map<string, IncidentRecord>(),
   events: [] as StoredEvent[],
   transcripts: new Map<string, TranscriptRow & { id: string }>(),
+  locations: new Map<string, { lat: number; lng: number }>(),
   failTranscriptWrites: false,
 };
 
@@ -34,6 +35,7 @@ export function resetFakes() {
   db.incidents.clear();
   db.events.length = 0;
   db.transcripts.clear();
+  db.locations.clear();
   db.failTranscriptWrites = false;
   currentCaller = null;
 }
@@ -80,18 +82,40 @@ export const fakeRepo = {
     reporterId: string;
     patientId: string | null;
     note: string | null;
-  }) =>
-    seedIncident({
+    location: { lat: number; lng: number } | null;
+  }) => {
+    const record = seedIncident({
       reporter_id: input.reporterId,
       patient_id: input.patientId,
       note: input.note,
-    }),
+    });
+    if (input.location) db.locations.set(record.id, input.location);
+    return record;
+  },
+  getIncidentLocation: async (id: string) => db.locations.get(id) ?? null,
+  updateIncidentDetails: async (
+    id: string,
+    details: { location?: { lat: number; lng: number }; note?: string },
+  ) => {
+    const incident = db.incidents.get(id);
+    if (!incident || incident.status === "closed") return;
+    if (details.location) db.locations.set(id, details.location);
+    if (details.note) incident.note = details.note;
+  },
   // Mirrors the real atomic claim: only if unassigned (or already ours).
   claimIncident: async (id: string, bhwId: string) => {
     const incident = db.incidents.get(id);
     if (!incident || incident.status === "closed") return null;
     if (incident.assigned_bhw && incident.assigned_bhw !== bhwId) return null;
     incident.assigned_bhw = bhwId;
+    return { ...incident };
+  },
+  closeIncident: async (id: string, bhwId: string) => {
+    const incident = db.incidents.get(id);
+    if (!incident || incident.assigned_bhw !== bhwId || incident.status === "closed") {
+      return null;
+    }
+    incident.status = "closed";
     return { ...incident };
   },
   logEvent,

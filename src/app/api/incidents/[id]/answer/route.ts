@@ -8,6 +8,7 @@ import { getCaller } from "@/lib/incidents/caller";
 import {
   claimIncident,
   getIncident,
+  getIncidentLocation,
   getPatientSummary,
   logEventSafe,
 } from "@/lib/incidents/repo";
@@ -33,13 +34,18 @@ export async function POST(
     if (!claimed) return jsonError(409, "Another health worker already answered.");
 
     await logEventSafe(claimed.id, caller.id, "call_answered");
-    // Patient details only go to the BHW who accepted, never to the queue.
-    const patient = await getPatientSummary(claimed.patient_id);
+    // Patient details and the caller's location only go to the BHW who
+    // accepted, never to the queue.
+    const [patient, location] = await Promise.all([
+      getPatientSummary(claimed.patient_id),
+      getIncidentLocation(claimed.id),
+    ]);
     return NextResponse.json({
       incidentId: claimed.id,
       patientName: patient?.name ?? null,
       patient,
       note: claimed.note,
+      location,
     });
   } catch (error) {
     console.error("[api/incidents/answer]", (error as Error).message);

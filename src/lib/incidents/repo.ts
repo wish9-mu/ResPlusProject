@@ -3,6 +3,7 @@
 // (src/lib/incidents/access.ts) before calling a write here.
 // All functions throw on database errors; callers decide what is fatal.
 import { createAdminClient } from "@/lib/supabase/server";
+import { parseEwkbPoint } from "@/lib/geo/ewkb";
 import type { IncidentStatus, LatLng } from "@/lib/types";
 import type { CallEventType } from "@/lib/agora/channel";
 
@@ -23,7 +24,7 @@ export interface TranscriptRow {
   source_key: string;
 }
 
-export type IncidentEventType = CallEventType | "sos_created";
+export type IncidentEventType = CallEventType | "sos_created" | "incident_closed";
 
 const INCIDENT_COLUMNS =
   "id,status,reporter_id,assigned_bhw,patient_id,note,created_at";
@@ -101,6 +102,27 @@ export async function createIncident(input: {
   return data;
 }
 
+// A repeat SOS on an open incident refreshes what the caller just sent: a
+// newer GPS fix and/or a note. Fields left undefined are not touched.
+export async function updateIncidentDetails(
+  incidentId: string,
+  details: { location?: LatLng; note?: string },
+): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  if (details.location) {
+    patch.location = `SRID=4326;POINT(${details.location.lng} ${details.location.lat})`;
+  }
+  if (details.note) patch.note = details.note;
+  if (Object.keys(patch).length === 0) return;
+  patch.updated_at = new Date().toISOString();
+  const { error } = await createAdminClient()
+    .from("incidents")
+    .update(payload(patch))
+    .eq("id", incidentId)
+    .neq("status", "closed");
+  if (error) throw error;
+}
+
 // Atomically assigns the BHW only if nobody else has the incident yet.
 // Returns null when another BHW won the race.
 export async function claimIncident(
@@ -113,6 +135,24 @@ export async function claimIncident(
     .eq("id", incidentId)
     .neq("status", "closed")
     .or(`assigned_bhw.is.null,assigned_bhw.eq.${bhwId}`)
+    .select(INCIDENT_COLUMNS)
+    .maybeSingle<IncidentRecord>();
+  if (error) throw error;
+  return data;
+}
+
+// Closes an incident assigned to this BHW. Returns null if it is not theirs
+// or is already closed.
+export async function closeIncident(
+  incidentId: string,
+  bhwId: string,
+): Promise<IncidentRecord | null> {
+  const { data, error } = await createAdminClient()
+    .from("incidents")
+    .update(payload({ status: "closed", updated_at: new Date().toISOString() }))
+    .eq("id", incidentId)
+    .eq("assigned_bhw", bhwId)
+    .neq("status", "closed")
     .select(INCIDENT_COLUMNS)
     .maybeSingle<IncidentRecord>();
   if (error) throw error;
@@ -160,6 +200,17 @@ export async function insertTranscriptSegments(
     .select("id");
   if (error) throw error;
   return data?.length ?? 0;
+}
+
+// The SOS GPS fix, or null if the caller's phone didn't share one.
+export async function getIncidentLocation(incidentId: string): Promise<LatLng | null> {
+  const { data, error } = await createAdminClient()
+    .from("incidents")
+    .select("location")
+    .eq("id", incidentId)
+    .maybeSingle<{ location: string | null }>();
+  if (error) throw error;
+  return parseEwkbPoint(data?.location ?? null);
 }
 
 export interface PatientSummary {

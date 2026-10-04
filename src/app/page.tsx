@@ -338,6 +338,7 @@ function LiveScreen({
         incidentId={incidentId}
         setupError={setupError}
         fallbackTel={BHW_PHONE}
+        onNewSos={onReset}
       />
 
       {/* Progress */}
